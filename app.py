@@ -1,6 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 import asyncio
-from miraie_ac import MirAIeHub, MirAIeBroker, Device, DeviceDetails, MirAIeTopic, Home
+from miraie_ac import MirAIeHub, MirAIeBroker
+from miraie_ac.device import Device, DeviceDetails
+from miraie_ac.topic import MirAIeTopic
+from miraie_ac.home import Home
 
 app = FastAPI()
 
@@ -57,56 +60,56 @@ async def patched_process_home_details(self, json_data):
 
 MirAIeHub._process_home_details = patched_process_home_details
 
-import os
-from dotenv import load_dotenv
-
-# Load local .env file if it exists
-load_dotenv()
-
 # ==========================================
-# CONFIGURATION (Loaded from environment)
+# CORE LOGIC
 # ==========================================
-MOBILE = os.getenv("MIRAIE_MOBILE")
-PASSWORD = os.getenv("MIRAIE_PASSWORD")
-TARGET_AC_NAME = os.getenv("MIRAIE_AC_NAME", "sarthak-ac")
-
-async def run_command(command: str):
+async def run_command(command: str, phone: str, password: str, ac_name: str):
     broker = MirAIeBroker()
     hub = MirAIeHub()
     try:
-        await hub.init(MOBILE, PASSWORD, broker)
+        await hub.init(phone, password, broker)
         
         # Wait for MQTT connection
-        for _ in range(20): # 10 second timeout
+        for _ in range(20): 
             if hasattr(broker, 'client') and broker.client is not None:
                 break
             await asyncio.sleep(0.5)
         else:
             raise Exception("MQTT Connection Timeout")
 
-        ac = next((d for d in hub.home.devices if d.name == TARGET_AC_NAME), None)
+        # Find the AC (supports fuzzy matching or exact)
+        target = ac_name.lower().replace(" ", "-")
+        ac = next((d for d in hub.home.devices if d.name == target), None)
+        
         if not ac:
-            raise Exception(f"AC {TARGET_AC_NAME} not found")
+            raise Exception(f"AC '{ac_name}' not found. Available: {[d.name for d in hub.home.devices]}")
 
         if command == "on":
             await ac.turn_on()
         else:
             await ac.turn_off()
         
-        # Give it a moment to send the message
         await asyncio.sleep(2)
         return True
     finally:
         await hub.http.close()
 
 @app.get("/ac/{command}")
-async def control_ac(command: str):
+async def control_ac(
+    command: str, 
+    phone: str = Query(..., description="Registered mobile number with country code"), 
+    password: str = Query(..., description="MirAIe password"), 
+    name: str = Query("sarthak-ac", description="Name of the AC to control")
+):
     if command not in ["on", "off"]:
         raise HTTPException(status_code=400, detail="Invalid command. Use 'on' or 'off'.")
     
-    success = await run_command(command)
-    return {"status": "success", "command": command}
+    try:
+        await run_command(command, phone, password, name)
+        return {"status": "success", "device": name, "command": command}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
 def read_root():
-    return {"message": "MirAIe AC API is running"}
+    return {"message": "Generic MirAIe AC API is live. Usage: /ac/on?phone=...&password=...&name=..."}
