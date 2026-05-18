@@ -106,7 +106,9 @@ async def run_command(command: str, phone: str, password: str, ac_name: str):
     finally:
         await hub.http.close()
 
-@app.get("/ac/{command}")
+from fastapi.responses import PlainTextResponse
+
+@app.get("/ac/{command}", response_class=PlainTextResponse)
 async def control_ac(
     command: str, 
     phone: str = Query(..., description="Registered mobile number with country code"), 
@@ -114,18 +116,13 @@ async def control_ac(
     name: str = Query("sarthak-ac", description="Name of the AC to control")
 ):
     if command not in ["on", "off"]:
-        raise HTTPException(status_code=400, detail="Invalid command. Use 'on' or 'off'.")
+        return PlainTextResponse(f"Error: Invalid command {command}", status_code=400)
     
     try:
         await run_command(command, phone, password, name)
-        return {"status": "success", "device": name, "command": command}
+        return f"Success: {name} turned {command}"
     except Exception as e:
-        # Return the actual error message to the browser
-        return {
-            "status": "error",
-            "message": str(e),
-            "traceback": traceback.format_exc()
-        }
+        return PlainTextResponse(f"Error: {str(e)}", status_code=500)
 
 @app.get("/")
 def read_root():
