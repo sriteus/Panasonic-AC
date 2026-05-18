@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+miraie-ac
+aiohttp
+aiomqtt
+paho-mqtt
+certifi
+python-dotenv
