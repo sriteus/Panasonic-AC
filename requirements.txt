@@ -1,6 +1,5 @@
 fastapi
 uvicorn
-miraie-ac
 aiohttp
 aiomqtt
 paho-mqtt
